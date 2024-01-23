@@ -1,1 +1,1 @@
-# SpamOrHam
+# Naive Bayes Classifier

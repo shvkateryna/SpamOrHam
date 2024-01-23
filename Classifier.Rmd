@@ -1,0 +1,403 @@
+---
+editor_options:
+  markdown:
+    wrap: 72
+---
+
+```{r setup, include=FALSE}
+#knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Probability and Statistics
+
+# Lab Assignment 1: Naive Bayes Classifier
+
+## Work breakdown
+
+-   *Name1 Surname1*: Kateryna Shvahuliak
+-   *Name2 Surname2*: Uliana Matvisiv
+-   *Name3 Surname3*: Bohdan Ozarko
+
+## Introduction
+
+During the first three weeks, you learned a couple of essential notions
+and theorems, and one of the most important among them is the *Bayes
+theorem*.
+
+One of its applications is **Naive Bayes classifier**, which is a
+probabilistic classifier whose aim is to determine which class some
+observation probably belongs to by using the Bayes formula:
+$$\mathsf{P}(\mathrm{class}\mid \mathrm{observation})=\frac{\mathsf{P}(\mathrm{observation}\mid\mathrm{class})\mathsf{P}(\mathrm{class})}{\mathsf{P}(\mathrm{observation})}$$
+
+Under the strong independence assumption, one can calculate
+$\mathsf{P}(\mathrm{observation} \mid \mathrm{class})$ as
+$$\mathsf{P}(\mathrm{observation}) = \prod_{i=1}^{n} \mathsf{P}(\mathrm{feature}_i), \qquad \mathsf{P}(\mathrm{observation} \mid \mathrm{class}) = \prod_{i=1}^{n} \mathsf{P}(\mathrm{feature}_i \mid \mathrm{class}),$$
+where $n$ is the total number of features describing a given
+observation. Thus, $\mathsf{P}(\mathrm{class}|\mathrm{observation})$ now
+can be calculated as
+
+$$\mathsf{P}(\mathrm{class} \mid \mathrm{\mathrm{observation}}) = \mathsf{P}(\mathrm{class})\times \prod_{i=1}^{n}\frac{\mathsf{P}(\mathrm{feature}_i\mid \mathrm{class})}{\mathsf{P}(\mathrm{feature}_i)}\tag{1}$$
+
+All the terms on the right-hand side can be estimated from the data as
+respective relative frequencies;\
+**\*see [this
+site](https://monkeylearn.com/blog/practical-explanation-naive-bayes-classifier/)
+for more detailed explanations\***
+
+## Data description
+
+There are 5 datasets uploaded on the cms (data.zip)
+
+To determine your variant, take your team number from the list of teams
+on cms and take *mod 5* - this is the number of your data set.
+
+-   **0 - authors** This data set consists of citations of three famous
+    writers: Edgar Alan Poe, Mary Wollstonecraft Shelley and HP
+    Lovecraft. The task with this data set is to classify a piece of
+    text with the author who was more likely to write it.
+
+-   **1 - discrimination** This data set consists of tweets that have
+    discriminatory (sexism or racism) messages or of tweets that are of
+    neutral mood. The task is to determine whether a given tweet has
+    discriminatory mood or does not.
+
+-   **2 - fake news** This data set contains data of American news: a
+    headline and an abstract of the article. Each piece of news is
+    classified as fake or credible. The task is to classify the news
+    from test.csv as credible or fake.
+
+-   **3 - sentiment** All the text messages contained in this data set
+    are labeled with three sentiments: positive, neutral or negative.
+    The task is to classify some text message as the one of positive
+    mood, negative or neutral.
+
+-   **4 - spam** This last data set contains SMS messages classified as
+    spam or non-spam (ham in the data set). The task is to determine
+    whether a given message is spam or non-spam.
+
+Each data set consists of two files: *train.csv* and *test.csv*. The
+first one you will need find the probabilities distributions for each of
+the features, while the second one is needed for checking how well your
+classifier works.
+
+```{r}
+# here goes a list of recommended libraries,
+# though you may install other ones if they are needed
+library(tidytext)
+library(readr)
+library(dplyr)
+library(ggplot2)
+library(wordcloud)
+```
+
+## Outline of the work
+
+1.  **Data pre-processing** (includes removing punctuation marks and
+    stop words, representing each message as a bag-of-words)
+2.  **Data visualization** (it's time to plot your data!)
+3.  **Classifier implementation** (using the training set, calculate all
+    the conditional probabilities in formula (1) and then use those to
+    predict classes for messages in the testing set)
+4.  **Measurements of effectiveness of your classifier** (accuracy,
+    precision and recall curves, F1 score metric etc)
+5.  **Conclusions**
+
+*!! do not forget to submit both the (compiled) Rmd source file and the
+.html output !!*
+
+## Data pre-processing
+
+-   Read the *.csv* data files.
+-   Сlear your data from punctuation or other unneeded symbols.
+-   Clear you data from stop words. You don't want words as is, and, or
+    etc. to affect your probabilities distributions, so it is a wise
+    decision to get rid of them. Find list of stop words in the cms
+    under the lab task.
+-   Represent each test message as its bag-of-words. Here:
+    <https://machinelearningmastery.com/gentle-introduction-bag-words-model/>
+    you can find general introduction to the bag-of-words model and
+    examples on to create it.
+-   It is highly recommended to get familiar with R dataframes, it would
+    make the work much easier to do.
+-   Useful links:
+    -   <https://steviep42.github.io/webscraping/book/bagofwords.html#tidytext> -
+        example of using *tidytext* to count frequencies of the words.
+    -   Basics of Text Mining in R:
+        <http://rstudio-pubs-static.s3.amazonaws.com/256588_57b585da6c054349825cba46685d8464.html>
+        . Note that it also includes an example on how to create a bag
+        of words from your text document.
+
+```{r}
+test_path <- "data/4-spam/test.csv"
+train_path <- "data/4-spam/train.csv"
+
+stop_words <- read_file("stop_words.txt")
+# https://stackoverflow.com/questions/27195912/why-does-strsplit-return-a-list
+splitted_stop_words <- strsplit(stop_words, split='\n')
+splitted_stop_words <- splitted_stop_words[[1]]
+```
+
+```{r}
+train <-  read.csv(file = train_path, stringsAsFactors = FALSE)
+test <-  read.csv(file = test_path, stringsAsFactors = FALSE)
+train_ham <- train[train$Category == "ham", ]
+train_spam <- train[train$Category == "spam", ]
+#train_spam
+```
+
+
+Preparing training data:
+```{r}
+# note the power functional features of R bring us! 
+tidy_text <- unnest_tokens(train, 'splitted', 'Message', token="words") %>%
+             filter(!splitted %in% splitted_stop_words) 
+
+spam_df <- tidy_text[tidy_text$Category == "spam", ]
+ham_df <- tidy_text[tidy_text$Category == "ham", ]
+
+word_counts_spam <- spam_df %>% count(splitted, sort = TRUE)
+spam_df <- left_join(spam_df, word_counts_spam, by = "splitted") %>% arrange(desc(n)) %>% distinct()
+
+
+word_counts_ham <- ham_df %>% count(splitted, sort = TRUE)
+ham_df <- left_join(ham_df, word_counts_ham, by = "splitted")  %>% arrange(desc(n)) %>% distinct()
+
+tidy_text$Category <- "ham + spam"
+word_counts <- tidy_text %>% count(splitted, sort = TRUE)
+tidy_text <- left_join(tidy_text, word_counts, by = "splitted") %>% distinct() %>%
+  arrange(desc(n))
+
+ham_df
+spam_df
+tidy_text
+
+```
+
+## Data visualization
+For spam:
+```{r}
+wordcloud(words = head(spam_df$splitted, 20), freq = head(spam_df$n, 20), colors=brewer.pal(8, "Dark2"), scale=c(5, 1))
+ggplot(head(spam_df, 20), aes(x = splitted, y = n)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(title = "Spam", x = "Words", y = "Frequency")
+```
+For ham:
+```{r}
+wordcloud(words = head(ham_df$splitted, 20), freq = head(spam_df$n, 20), colors=brewer.pal(8, "Dark2"), scale=c(5, 1))
+ggplot(head(ham_df, 20), aes(x = splitted, y = n)) +
+  geom_bar(stat = "identity", fill = "skyblue") +
+  labs(title = "Ham", x = "Words", y = "Frequency")
+```
+
+Each time you work with some data, you need to understand it before you
+start processing it. R has very powerful tools to make nice plots and
+visualization. Show what are the most common words for negative and
+positive examples as a histogram, word cloud etc. Be creative!
+
+## Classifier implementation
+
+```{r}
+naiveBayes <- setRefClass("naiveBayes",
+                          
+       # here it would be wise to have some vars to store intermediate result
+       # frequency dict etc. Though pay attention to bag of words! 
+       # Використовуйте функцію ifelse() для створення вектора міток
+       methods = list(
+                    # prepare your training data as X - bag of words for each of your
+                    # messages and corresponding label for the message encoded as 0 or 1 
+                    # (binary classification task)
+                    fit = function(X)
+                    {
+                      probabilities_spam <- list()
+                      probabilities_ham <- list()
+                      all_words <- length(tidy_text$splitted)
+                      ham_words <- sum(as.numeric(ham_df$n))
+                      spam_words <- sum(as.numeric(spam_df$n))
+                      for (word in X) {
+                          if (length(spam_df$n[spam_df$splitted == word]) == 0) {
+                             word_frequency_spam <- 1
+                          } else {
+                             word_frequency_spam <- spam_df$n[spam_df$splitted == word] + 1
+                          }
+                          if (length(ham_df$n[ham_df$splitted == word]) == 0) {
+                            word_frequency_ham <- 1
+                          } else {
+                            word_frequency_ham <- ham_df$n[ham_df$splitted == word] + 1
+                          }
+
+                          probability_spam <- word_frequency_spam / (all_words + spam_words)
+                          probability_ham <- word_frequency_ham / (all_words + ham_words)
+
+                          probabilities_spam[[word]] <- probability_spam
+                          probabilities_ham[[word]] <- probability_ham
+                      }
+                      return(list(probabilities_spam, probabilities_ham))
+                    },
+                    # return prediction for a single message 
+                     predict = function(message, list_spam, list_ham)
+                    {
+
+                      message = tolower(message)
+                      message = unlist(strsplit(message, "\\s+"))
+                      message = gsub("[^A-Za-z'1-9]", "",message)
+                      spam_prob <- 1
+                      ham_prob <- 1
+                      for (word in message) {
+                        if (!(word %in% splitted_stop_words)) {
+                          if (word %in% names(list_spam)) {
+                            spam_prob = spam_prob * list_spam[[word]]
+                          }
+                          else {
+                            spam_prob = spam_prob * (1/(length(tidy_text$splitted) + sum(as.numeric(spam_df$n))))
+                          }
+                          if (word %in% names(list_ham)) {
+                            ham_prob = ham_prob * list_ham[[word]]
+                          }
+                          else {
+                            ham_prob = ham_prob * (1/(length(tidy_text$splitted) + sum(as.numeric(ham_df$n))))
+                          }
+                        }
+                      }
+                      if (spam_prob > ham_prob) {
+                        return (1)
+                      } else {
+                        return (0)
+                      }
+                    },
+                    
+                    # score you test set so to get the understanding how well you model
+                    # works.
+                    # look at f1 score or precision and recall
+                    # visualize them 
+                    # try how well your model generalizes to real world data!
+                    
+                    score = function(X_test, y_test, cleaned)
+                    {
+                        true_positives <- 0
+                        false_positives <- 0
+                        true_negatives <- 0
+                        false_negatives <- 0
+                        
+                        probabilities = fit(cleaned)
+                        
+                        for (i in 1:length(X_test)) {
+                            predicted_class <- predict(X_test[[i]], probabilities[[1]], probabilities[[2]])
+                            if (as.integer(predicted_class) == 1 && as.integer(y_test[i]) == 1) {
+                              true_positives <- true_positives + 1
+                            } else if (as.integer(predicted_class) == 1 && as.integer(y_test[i]) == 0) {
+                              false_positives <- false_positives + 1
+                            } else if (as.integer(predicted_class) == 0 && as.integer(y_test[i]) == 1) {
+                              false_negatives <- false_negatives + 1
+                            } else if (as.integer(predicted_class) == 0 && as.integer(y_test[i]) == 0){
+                              true_negatives <- true_negatives + 1
+                            }
+                        }
+                        accuracy <- (true_positives + true_negatives) / length(y_test)
+                        precision <- true_positives / (true_positives + false_positives)
+                        recall <- true_positives / (true_positives + false_negatives)
+                        f1_score <- 2 * (precision * recall) / (precision + recall)
+                        
+                        result <- list(
+                          accuracy = accuracy,
+                          precision = precision,
+                          recall = recall,
+                          f1_score = f1_score,
+                          true_positives = true_positives,
+                          true_negatives = true_negatives,
+                          false_positives = false_positives,
+                          false_negatives = false_negatives
+                        )
+                        return(result)
+                    }
+       )
+)
+model = naiveBayes()
+
+X_test <- as.list(test$Message)
+y_test <- ifelse(test$Category == "spam", 1, 0)
+res = model$score(X_test, y_test, tidy_text$splitted)
+res
+```
+
+## Measure effectiveness of your classifier
+
+-   Note that accuracy is not always a good metric for your classifier.
+    Look at precision and recall curves, F1 score metric.
+-   Visualize them.
+-   Show failure cases.
+
+```{r}
+accuracy <- res[[1]]
+
+accuracy_frame <- data.frame(
+  category = c("Correct", "Incorrect"),
+  value = c(accuracy * 100, (1 - accuracy) * 100)
+)
+
+sky_blue <- "#87CEEB"
+grey <- "#808080"
+
+ggplot(accuracy_frame, aes(x = category, y = value, fill = category)) +
+  geom_bar(stat = "identity") +
+  scale_y_continuous(labels = scales::percent_format(scale = 1)) +
+  labs(y = "Percentage", title = "Accuracy", fill = "") +
+  theme_minimal() + scale_fill_manual(values = c(sky_blue, grey))
+
+```
+
+
+
+```{r}
+result <- data.frame(
+  Actual = c("Positive", "Negative", "Positive", "Negative"),
+  Predicted = c("Positive", "Negative", "Negative", "Positive"),
+  Value = c(res[[5]], res[[6]], res[[7]], res[[8]])
+)
+
+ggplot(result, aes(x = Actual, y = Predicted, fill = Value)) +
+  geom_tile() +
+  geom_text(aes(label = Value), vjust = 1) +
+  scale_fill_gradient(low = "white", high = "skyblue") +
+  labs(title = "Matrix", x = "Actual", y = "Predicted") +
+  theme_minimal()
+```
+
+## Conclusions
+
+Summarize your work by explaining in a few sentences the points listed
+below.
+
+-   Describe the method implemented in general. Show what are
+    mathematical foundations you are basing your solution on.
+-   List pros and cons of the method. This should include the
+    limitations of your method, all the assumption you make about the
+    nature of your data etc.
+    
+Naive Bayes classifier is a probabilistic machine learning algorithm commonly
+used for classification tasks, such as spam detection in our case. 
+It's based on Bayes' theorem and predicts, whether message
+belongs to the spam or ham class considering words in the message.
+It uses word frequencies from the training data to estimate the conditional 
+probabilities of words occurring in spam and non-spam messages.The final decision 
+is made by comparing these probabilities.
+Pros:
+Simplicity: Naive Bayes is relatively simple to implement and can provide 
+good results for text classification tasks.
+Efficient: It works well with large datasets and high-dimensional feature spaces.
+Low training time: The training time for Naive Bayes is usually quite fast, which
+is advantageous when working with large datasets or in real-time applications.
+Cons:
+Naive independence assumption:The algorithm assumes that all words are 
+independent, which is often not the case in text data. In reality, word 
+dependencies can significantly impact classification accuracy.
+Limited expressiveness: Naive Bayes may not capture complex relationships 
+between words in text.
+Sensitivity to data quality: The quality of the training data, such as the 
+presence of stopwords or data pre-processing, can significantly affect the performance.
+Equal importance of all words: The model assigns equal importance to all words 
+within the message. It does not consider the relative importance of words in 
+determining the class. In practice, some words may be more indicative of spam 
+or non-spam than others.
+Assumption of Laplace smoothing:The code uses Laplace smoothing by adding a 
+small constant (1) to the word frequencies. While this can help with zero-frequency
+issues, it introduces its own set of assumptions and might not always be the best choice.
